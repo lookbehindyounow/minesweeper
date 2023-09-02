@@ -66,7 +66,7 @@ def menu():
     start_button=Button(outer_screen,text="Start",command=lambda:setup(input_1.get(),input_2.get(),
                                                                        input_3.get(),input_4.get()))
     start_button.grid()
-    leaderboard_button=Button(outer_screen,text="Leaderboards",command=present)
+    leaderboard_button=Button(outer_screen,text="Leaderboards",command=present_no_gui)
     leaderboard_button.grid(row=6,column=1)
     outer_screen.pack()
 
@@ -428,6 +428,20 @@ def present(): # shows the leaderboards
     reset=Button(outer_screen,text="Back",command=menu)
     reset.grid(row=7,columnspan=2)
     outer_screen.pack()
+
+def present_no_gui():
+    leaderboards=access()
+    print("leaderboards:")
+    for mode in leaderboards:
+        print(f"    {mode[0][0]}x{mode[0][1]} grid with {mode[0][2]} mines:")
+        for entry in mode[1]:
+            written_time=str(round(entry[1]%60,4))+"s" # this bit figures out if it goes into minutes or hours
+            if entry[1]>=60:
+                written_time=str(int(entry[1]%3600//60))+"m "+written_time
+                if entry[1]>=3600:
+                    written_time=str(int(entry[1]//3600))+"h "+written_time
+            print(f"        {entry[0]}: {written_time}")
+        print()
 
 def access(): # reads the file & puts it into the nested list (table with sections)
     leaderboards=[]
