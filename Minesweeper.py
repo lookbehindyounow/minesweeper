@@ -1,18 +1,19 @@
-from tkinter import Tk,Frame,Label,Entry,Button,PhotoImage,Scrollbar # GUI library
+from tkinter import Tk,Frame,Label,Entry,Button,PhotoImage,Canvas,Scrollbar # GUI library
+import tkinter.font as Font
 from random import randint # placing mines
-from time import time,sleep # timer
+from time import time # timer
 
 window=Tk() # window
-window.geometry(f"720x720+{window.winfo_screenwidth()//2-360}+{window.winfo_screenheight()//2-360}")
+window.geometry(f"900x720+{window.winfo_screenwidth()//2-360}+{window.winfo_screenheight()//2-360}")
 window.frame=Frame(window)
 window.frame.pack()
 
-explosion_pic=PhotoImage(master=window,width=16,height=17,file="explosion.png") # loading images
-flag_pic=PhotoImage(master=window,width=16,height=17,file="flag.png")
-mine_pic=PhotoImage(master=window,width=16,height=17,file="mine.png")
-flagged_mine_pic=PhotoImage(master=window,width=16,height=17,file="flagged_mine.png")
+explosion_pic=PhotoImage(master=window,file="explosion.png") # loading images
+flag_pic=PhotoImage(master=window,file="flag.png")
+mine_pic=PhotoImage(master=window,file="mine.png")
+flagged_mine_pic=PhotoImage(master=window,file="flagged_mine.png")
 
-state={"name":"","rows":10,"columns":10,"mines":10}
+colours=["blue","green","red","magenta","maroon","#0db879","grey","black"]
 
 # ---------------------------------------------------------------------------------------------------------------- #
 #                                                     Pre-game                                                     #
@@ -20,18 +21,18 @@ state={"name":"","rows":10,"columns":10,"mines":10}
 
 def menu(): # displays menu
     [widget.destroy() for widget in window.frame.winfo_children()] # get rid of whatever was in canvas before putting something new in
-    if (window.winfo_width(),window.winfo_height())!=(720,720):
-        window.geometry("720x720") # resizing if necessary
+    if (window.winfo_width(),window.winfo_height())!=(900,720):
+        window.geometry("900x720") # resizing if necessary
     Label(window.frame).grid() # spacer
     inputs=[None]*4
-    for i,key in zip(range(4),state): # these are the text fields for the menu
+    for i,key in zip(range(4),state): # these are the text fields for the menu (name,rows,columns,mines)
         Label(window.frame,text=key).grid()
         inputs[i]=Entry(window.frame)
         inputs[i].insert(0,state[key])
-        inputs[i].grid(row=i,column=1)
+        inputs[i].grid(row=i+1,column=1)
     Label(window.frame).grid() # spacer
     Button(window.frame,text="Start",command=lambda:setup(inputs)).grid()
-    Button(window.frame,text="Leaderboards",command=present_no_gui).grid(row=6,column=1)
+    Button(window.frame,text="Leaderboards",command=present).grid(row=6,column=1)
 
 def setup(inputs): # validates input & sets up button grid
     # validates input
@@ -71,18 +72,23 @@ def setup(inputs): # validates input & sets up button grid
         screen_width=max(20*state["columns"]+40,720)
         window.geometry(f"{screen_width}x{screen_height}")
 
-    # displays button grid & binds functions to mouse events
+    # creates & displays button grid & binds functions to button mouse events
     Label(window.frame).grid() # spacer
-    minefield=Frame(window.frame)
+    minefield=Frame(window.frame,bg="#777")
     minefield.grid()
-    state["buttons"]=[[Label(minefield,text="",relief="raised",height=1,width=2)]*state["columns"]]*state["rows"] # creates 2d-array of buttons
+    state["buttons"]=[[Label(minefield,text="",bg="#aaa",bd=0,highlightthickness=0) for c in range(state["columns"])] for r in range(state["rows"])]
     for row in range(state["rows"]):
+        pad_y=(int(row==0),1)
         for column in range(state["columns"]):
-            state["buttons"][row][column].grid(row=row,column=column)
+            pad_x=(int(column==0),1)
+            state["buttons"][row][column].grid(row=row,column=column,padx=pad_x,pady=pad_y,ipadx=0,ipady=0,sticky="nsew")
             state["buttons"][row][column].bind("<Button-1>",lambda event,row=row,column=column:clicked(row,column))
             state["buttons"][row][column].bind("<Button-3>",lambda event,row=row,column=column:clicked(row,column))
-            state["buttons"][row][column].bind("<ButtonRelease-1>",lambda event,row=row,column=column:reveal(row,column))
+            state["buttons"][row][column].bind("<ButtonRelease-1>",lambda event,row=row,column=column:reveal(event,row,column))
             state["buttons"][row][column].bind("<ButtonRelease-3>",lambda event,row=row,column=column:flag(row,column))
+    size=Font.nametofont("TkDefaultFont").metrics("linespace")+3
+    [minefield.rowconfigure(row,minsize=size) for row in range(state["rows"])]
+    [minefield.columnconfigure(column,minsize=size) for column in range(state["columns"])]
     Label(window.frame).grid() # spacer
     Button(window.frame,text="Reset",command=menu).grid()
     state["time label"]=Label(window.frame)
@@ -100,7 +106,7 @@ def start(row,column): # decides placement of mines & starts timer
     # [number n from 1-8]=empty space with n adjacent mines
     # FM=correctly flagged mine
     # FF=incorrectly flagged empty space
-    state["grid"]=[["U"]*state["columns"]]*state["rows"] # <-- creates empty grid
+    state["grid"]=[["U" for c in range(state["columns"])] for r in range(state["rows"])] # <-- creates empty grid
     mine_counter=state["mines"]
     while mine_counter>0:
         random_row=randint(0,state["rows"]-1)
@@ -111,201 +117,140 @@ def start(row,column): # decides placement of mines & starts timer
     state["start time"]=time()
     update_timer()
 
-def update_timer():
+def update_timer(): # updates timer every second, synchronises clock with real time & schedules next update
     if state["game over"]: return
-    state["time label"].config(text=str(round(time()-state["start time"],0))[0:-2]+"s")
-    wait=1000*round((state["start time"]-time())%1,3) # keeps the timer synched with actual time
-    window.after(int(wait),update_timer) # keeps the timer updating
+    state["time label"].config(text=str(round(time()-state["start time"],0))[0:-2]+"s") # update
+    wait=1000*round((state["start time"]-time())%1,3) # synch
+    window.after(int(wait),update_timer) # schedule
 
 def clicked(row,column): # buttons go down when you click them but don't reveal/flag until you let go
     if state["game over"]: return
-    try:
-        if state["grid"][row][column] in ["U","M","FF","FM"]: # only if unclicked & the game is still going
-            state["buttons"][row][column].config(relief=SUNKEN)
-    except NameError: # TODO: test without exceptions & find cause of any present errors
-        state["buttons"][row][column].config(relief=SUNKEN)
-    except IndexError:
-        state["buttons"][row][column].config(relief=SUNKEN)
+    # first click is in condition because state["grid"] doesn't exist yet on first click
+    if state["first click"] or state["grid"][row][column] in ["U","M","FF","FM"]:
+        state["buttons"][row][column].config(bg="#888")
 
-def reveal(row,column):
+def reveal(event,row,column): # reveals if clicked square is mine or empty
+    if event.state&12: # ctrl/cmd+click to flag
+        flag(row,column)
+        return
     if state["game over"]: return
-    if state["first click"]: # changes the detection boolean, calls the function to place the mines & starts the timer
-        state["first click"]=False
-        start(row,column)
-        state["start time"]=time()
-        update_timer()
-    if state["grid"][row][column]in["U","FF"]: # if there's no mine to to the revealing algorithm
-        iterative_reveal(row,column)
-    elif state["grid"][row][column]in["M","FM"]: # if there's a mine game over
-        state["game over"]=True
-        state["buttons"][row][column].config(image=explosion_pic,width=16,height=17)
+    if state["first click"]: start(row,column)
+    if state["grid"][row][column]=="U": # if there's no mine to to the revealing algorithm
+        reveal_more(row,column)
+        check()
+    elif state["grid"][row][column]=="M": # if there's a mine game over
+        state["buttons"][row][column].config(image=explosion_pic,bg="#ccc")
         state["grid"][row][column]="*" # so it doesn't get shown as an unexploded mine in the game over mine reveal
-        end(False)
-    check()
+        end(True)
+    elif state["grid"][row][column] in ["FF","FM"]:
+        state["buttons"][row][column].config(bg="#aaa")
 
-def recursive_reveal(row,column): # old method of doing the reveal, not in use but still works as an alternate method
-    state["grid"][row][column]=""          # to iterative_reveal (below)
-    adjacent_mines=0
-    for vertical in range(3): # each iteration scans a row in the surrounding 3x3 square
-        if(row==0 and vertical==0)or(row==state["rows"]-1 and vertical==2): # skip 1st row scan if we're at the top
-            continue                                               # or last row scan if we're at the bottom
-        for horizontal in range (3): # the next 3 lines are the same stuff but for columns
-            if(column==0 and horizontal==0)or(column==state["columns"]-1 and horizontal==2):
-                continue
-            if state["grid"][row+vertical-1][column+horizontal-1]in["M","FM"]: # adjacent mine counter
-               adjacent_mines+=1
-    if adjacent_mines>0:
-        state["grid"][row][column]=str(adjacent_mines) # update grid
-    state["buttons"][row][column].config(text=state["grid"][row][column], # show on screen with coloured numbers
-                                fg=["white","blue","green","red","magenta","maroon","#0db879",
-                                    "grey","black"][adjacent_mines],font=("Helvetica",9,"bold"),
-                                relief=FLAT,image="",width=2,height=1)
-    if adjacent_mines==0: # with this method it's easier to do the adjacent scan twice because of the fact the
-                          # recursion happens in this nested loop & we need to know if there are any adjacent mines
-                          # before we even do anything here
-        for vertical in range(3):
-            if(row==0 and vertical==0)or(row==state["rows"]-1 and vertical==2):
-                continue
-            for horizontal in range (3):
-                if(column==0 and horizontal==0)or(column==state["columns"]-1 and horizontal==2):
-                    continue # ↓recalls itself for all scanned unclicked squares
-                if state["grid"][row+vertical-1][column+horizontal-1]=="U":
-                    # window.update() # unhash these 2 lines to show the recursive reveal path
-                    # sleep(0.01)
-                    recursive_reveal(row+vertical-1,column+horizontal-1)
-
-def iterative_reveal(row,column): # more memory efficient method I think? defo seems faster too
-    to_do=[(row,column)] # effectively a stack of the squares that need revealed
-    while True:
-        location=min(to_do)      # prioritises to do list of squares to reveal from the top down to save memory
-        to_do.remove(min(to_do)) # (without this it's a very perculiar search path)
-        state["grid"][location[0]][location[1]]=""
+def reveal_more(row,column): # reveals number of adjacent mines & if it's 0, does the same for all empty adjacent squares
+    to_do=[(row,column)] # stack of squares to be revealed
+    while to_do:
+        location=to_do.pop()
         adjacent_mines=0
         new_places=0
         for vertical in range(3): # each iteration scans a row in the surrounding 3x3 square
-            if(location[0]==0 and vertical==0)or(location[0]==state["rows"]-1 and vertical==2):
+            if(location[0]==0 and vertical==0) or (location[0]==state["rows"]-1 and vertical==2):
                 continue # ^skip 1st row scan if we're at the top or last row scan if we're at the bottom
-            for horizontal in range (3): # the next 3 lines are the same stuff but for columns
-                if(location[1]==0 and horizontal==0)or(location[1]==state["columns"]-1 and horizontal==2):
-                    continue
-                if state["grid"][location[0]+vertical-1][location[1]+horizontal-1]in["M","FM"]: # adjacent mine counter
+            for horizontal in range(3):
+                if(location[1]==0 and horizontal==0) or (location[1]==state["columns"]-1 and horizontal==2) or (vertical,horizontal)==(1,1):
+                    continue # ^skip 1st column scan if we're at the left side or last column scan if we're at the right side, also skip scanning the square we're on
+                adjacent_square=state["grid"][location[0]+vertical-1][location[1]+horizontal-1]
+                adjacent_square_coords=(location[0]+vertical-1,location[1]+horizontal-1)
+                if adjacent_square in ["M","FM"]: # if adjacent square is a mine, increment adjacent mines
                     adjacent_mines+=1
-                if state["grid"][location[0]+vertical-1][location[1]+horizontal-1]=="U":        # nested conditions to fit
-                    if (location[0]+vertical-1,location[1]+horizontal-1) not in to_do: # the rest of the code
-                        # ^if an adjacent square is unclicked & not already on the to do list
-                        to_do.append((location[0]+vertical-1,location[1]+horizontal-1)) # put it in the to do list
-                        new_places+=1 # & count how many new items were just put in incase they need removed
-        if adjacent_mines>0: # in the event that the current square is numbered & not blank
-            for i in range(new_places): # remove the newly added squares from the to do list
-                to_do.pop()
+                elif adjacent_mines==0 and (adjacent_square_coords not in to_do) and adjacent_square=="U":
+                    # if no adjacent mines (yet) & an adjacent square is unclicked & not already on the to do list
+                    to_do.append((location[0]+vertical-1,location[1]+horizontal-1)) # put it in the to do list
+                    new_places+=1 # count how many squares added to to_do incase they need removed
+        if adjacent_mines>0: # if square is numbered & not blank
+            if new_places: del to_do[-new_places:] # don't reveal adjacent squares by removing from to_do
             state["grid"][location[0]][location[1]]=str(adjacent_mines) # update grid
-        state["buttons"][location[0]][location[1]].config(text=state["grid"][location[0]][location[1]],
-                                                 fg=["white","blue","green","red","magenta","maroon","#0db879",
-                                                     "grey","black"][adjacent_mines],font=("Helvetica",9,"bold"),
-                                                 relief=FLAT,image="",width=2,height=1)
-        # window.update() # unhash these 2 lines to show the iterative reveal path (kind of boring when it's top down)
-        # sleep(0.01)
-        if len(to_do)==0:
-            break # finish when to do list empties
+            state["buttons"][location[0]][location[1]].config(text=state["grid"][location[0]][location[1]],
+                fg=colours[adjacent_mines-1],bg="#ccc",font=("Helvetica",9,"bold"),image="")
+        else:
+            state["grid"][location[0]][location[1]]="" # update grid
+            state["buttons"][location[0]][location[1]].config(bg="#ccc")
 
 def flag(row,column): # puts a flag when you right click
     if state["game over"]: return
-    if state["first click"]:
-        state["first click"]=False
-        start(row,column)
-        state["start time"]=time()
-        update_timer()
+    if state["first click"]: start(row,column)
     if state["grid"][row][column]=="M":
         state["grid"][row][column]="FM"
-        state["buttons"][row][column].config(image=flag_pic,relief=RAISED,width=16,height=17)
+        state["buttons"][row][column].config(image=flag_pic,bg="#aaa")
     elif state["grid"][row][column]=="U":
         state["grid"][row][column]="FF"
-        state["buttons"][row][column].config(image=flag_pic,relief=RAISED,width=16,height=17)
+        state["buttons"][row][column].config(image=flag_pic,bg="#aaa")
     elif state["grid"][row][column]=="FM":
         state["grid"][row][column]="M"
-        state["buttons"][row][column].config(image="",relief=RAISED,width=2,height=1)
+        state["buttons"][row][column].config(image="",bg="#aaa")
     elif state["grid"][row][column]=="FF":
         state["grid"][row][column]="U"
-        state["buttons"][row][column].config(image="",relief=RAISED,width=2,height=1)
+        state["buttons"][row][column].config(image="",bg="#aaa")
     check()
 
-def check(): # this is called after every square clicked & it checks if the game's finished
-    if state["game over"]: return
-    game_over_brute=True # there are 2 ways to win, flag all mines or clear all empty spaces
-    game_over_flag=True
+def check(): # checks if the game is won
+    empty_squares_unclicked=False # there are 2 ways to win, reveal all empty spaces or correctly flag all mines
+    flags_incomplete=False
     for row in state["grid"]:
         for column in row:
-            if column in["FF","U"]: # any empty spaces left un-revealed & you can't brute-force win
-                game_over_brute=False
-            if column in["FF","M"]: # any incorrect flags or mines that aren't flagged & you can't flag win
-                game_over_flag=False
-            if not game_over_brute and not game_over_flag: # leave the loop after both winning conditions aren't
-                break                                      # met to save time
-        if not game_over_brute and not game_over_flag:
-            break
-    if game_over_brute or game_over_flag: # stop the timer & end the game when you win
-        state["time taken"]=round(time()-state["start time"],3)
-        state["game over"]=True
-        end(True)
+            if column in["FF","U"]: # any incorrect flags or unclicked squares
+                empty_squares_unclicked=True
+            if column in["FF","M"]: # any incorrect flags or unflagged mines
+                flags_incomplete=True
+            if empty_squares_unclicked and flags_incomplete: # leave the check when both winning conditions are failed to save time
+                return
+    end(False)
 
 # ---------------------------------------------------------------------------------------------------------------- #
 #                                                    Game Over                                                     #
 # ---------------------------------------------------------------------------------------------------------------- #
 
-def end(win):
-    for row in range(len(state["rows"])): # reveals where the mines were
-        for column in range(len(state["columns"])):
-            if state["grid"][row][column]=="M":
-                state["buttons"][row][column].config(image=mine_pic,width=16,height=17)
-            if state["grid"][row][column]=="FM":
-                state["buttons"][row][column].config(image=flagged_mine_pic,width=16,height=17)
-    if win:
-        state["time label"].config(text=("Player time: "+str(state["time taken"])+"s")) # shows your time
-        # TODO: add a button to add your score to leaderboard optionally
-        leaderboards=access() # get the leaderboards table from file
-        if leaderboards is not None:
-            player_mode_rank=[state["rows"]*state["columns"],state["mines"]] # leaderboards are organised by rank - grid size & then mine count
-            new_leaderboards=[]
-            overwritten=False # this table is a list with sections & this boolean makes life easier
-            for mode in leaderboards: # for each grid size & mine count combo
-                mode_rank=[mode[0][0]*mode[0][1],mode[0][2]] # for comparison to our new time
-                if player_mode_rank[0]>mode_rank[0]and not overwritten: # time is for a new grid size or previous
-                    new_leaderboards.append([[state["rows"],state["columns"],state["mines"]],[(state["name"],state["time taken"])]]) # grid size with lowest
-                    overwritten=True                                                     # mine count
-                if player_mode_rank[0]==mode_rank[0]and not overwritten: # time is for the current grid size
-                    if player_mode_rank[1]>mode_rank[1]: # time is for a new mine count
-                        new_leaderboards.append([[state["rows"],state["columns"],state["mines"]],[(state["name"],state["time taken"])]])
-                        overwritten=True
-                    if player_mode_rank[1]==mode_rank[1]: # time is for the current mine count
-                        new_mode=[]
-                        for score in mode[1]: # for each time in rank
-                            if state["time taken"]<score[1]and not overwritten:
-                                new_mode.append((state["name"],state["time taken"])) # put time into new table section
-                                overwritten=True
-                            new_mode.append(score) # put existing times into new table section in order
-                        if not overwritten:
-                            new_mode.append((state["name"],state["time taken"])) # put time on at the end if it's the slowest
-                            overwritten=True
-                        mode[1]=new_mode # replace old table with new table for this rank
-                new_leaderboards.append(mode) # write each section to new leaderboard table in order
-            if not overwritten:
-                new_leaderboards.append([[state["rows"],state["columns"],state["mines"]],[(state["name"],state["time taken"])]]) # time is for new lowest rank
-            leaderboards=new_leaderboards # update leaderboards table
-            
-            file=open("leaderboard.txt","w") # overwrite leaderboards file with new table
-            file.truncate()
-            file_string=""
-            for mode in leaderboards: # file formate is explained further in access()
-                file_string+=str(mode[0][0])+","+str(mode[0][1])+","+str(mode[0][2])+":"
-                for score in mode[1]:
-                    file_string+=str(score[0])+","+str(score[1])+";"
-                file_string=file_string[0:-1]+"\n"
-            file.write(file_string)
-            file.close()
-        else:
-            file=open("leaderboard.txt","w") # if there is no file then make one
-            file.write(str(state["rows"])+","+str(state["columns"])+","+str(state["mines"])+":"+state["name"]+","+str(state["time taken"])+"\n")
-            file.close()
+def end(lost): # stops timer, reveals mines, adds time to leaderboards
+    state["time taken"]=round(time()-state["start time"],3) # stop timer
+    state["game over"]=True
+    # reveal mines
+    [[state["buttons"][r][c].config(image=mine_pic if state["grid"][r][c]=="M" else (flagged_mine_pic if state["grid"][r][c]=="FM" else None)) for c in range(state["columns"])] for r in range(state["rows"])]
+    if lost: return # nothing more to do if player lost
+    state["time label"].config(text=(f"Player time: {state["time taken"]}s")) # shows your time
+    # TODO: add a button to add your score to leaderboard optionally
+    leaderboards=access() # get leaderboards from file
+    if leaderboards==[]: # if file not found, corrupt or empty
+        file=open("leaderboards.txt","w")
+        file.write(f"{state["rows"]},{state["columns"]},{state["mines"]}|{state["name"]}:{state["time taken"]}\n")
+        file.close()
+        return
+    player_category=(state["rows"],state["columns"],state["mines"])
+    player_score=(state["name"],state["time taken"])
+    player_category_rank=[state["rows"]*state["columns"],state["mines"]] # categories are ranked by grid size then mine count
+    for i,[(rows,columns,mines),scores] in enumerate(leaderboards): # for each category
+        category_rank=[rows*columns,mines]
+        if player_category_rank[0]<category_rank[0]: continue # if grid size smaller than this category, skip to next category
+        if player_category_rank[0]>category_rank[0]: # if grid size bigger than this category, insert new category here & break
+            leaderboards.insert(i,[player_category,[player_score]])
+            break
+        elif player_category_rank[0]==category_rank[0]: # grid size equal to this category
+            if player_category_rank[1]<category_rank[1]: continue # if mine count less than this category, skip to next category
+            if player_category_rank[1]>category_rank[1]: # if mine count more than this category, insert new category here & break
+                leaderboards.insert(i,[player_category,[player_score]])
+                break
+            elif player_category_rank[1]==category_rank[1]: # grid size & mine count equal to this category # TODO: this does not mean categories are the same grid shape, add new category if rows different
+                # get first index where player time faster than this time or get len(scores) if player time is slowest
+                player_rank=next((j for j,score in enumerate(scores) if player_score[1]<score[1]),len(scores))
+                leaderboards[i][1].insert(player_rank,player_score) # insert score here & break
+                break
+    file_string=""
+    for [rows,columns,mines],score in leaderboards: # formats leaderboards to string for txt file
+        file_string+=f"{rows},{columns},{mines}|"
+        for name,time_taken in score:
+            file_string+=f"{name}:{time_taken},"
+        file_string=file_string[:-1]+"\n"
+    file=open("leaderboards.txt","w")
+    file.truncate()
+    file.write(file_string)
+    file.close()
 
 # ---------------------------------------------------------------------------------------------------------------- #
 #                                                   Leaderboards
@@ -319,37 +264,38 @@ def present(): # shows the leaderboards
     Label(window.frame).grid() # spacer
     leaderboards=access() # get the leaderboards table from file
     if leaderboards:
-        Label(window.frame,text="Player",relief=RIDGE,width=64).grid()
-        Label(window.frame,text="Time",relief=RIDGE,width=15).grid(row=1,column=1)
+        Label(window.frame,text="Player",relief="ridge",width=64).grid()
+        Label(window.frame,text="Time",relief="ridge",width=15).grid(row=1,column=1)
         Label(window.frame).grid() # spacer
 
-        boardframe=Frame(window.frame,yscrollincrement="20") # this is the object that is scrollable
-        boardframe.bind_all("<MouseWheel>",lambda:mouse_scroll(boardframe)) # this is what calls the event when the mouse wheel scrolls
+        boardframe=Canvas(window.frame,yscrollincrement="2") # this is the object that is scrollable
+        boardframe.bind_all("<MouseWheel>",lambda event:mouse_scroll(event,boardframe)) # this is what calls the event when the mouse wheel scrolls
         boardframe.grid(columnspan=2)
         scrollbar=Scrollbar(window.frame,command=boardframe.yview) # this is the scrollbar you can click & drag
         scrollbar.grid(row=3,column=2,sticky="ns")
         boardframe.config(yscrollcommand=scrollbar.set)
         
         board=Frame(boardframe) # this is where the actual tables are put on screen
-        lines=1
-        for mode in leaderboards: # for every rank
-            Label(board,text=str(mode[0][0])+"x"+str(mode[0][1])+" grid, "+str(mode[0][2])+" mines").grid()
+        line=0
+        for mode in leaderboards: # for every category
+            Label(board,text=str(mode[0][0])+"x"+str(mode[0][1])+" grid, "+str(mode[0][2])+" mines").grid(row=line,column=0,columnspan=2)
+            line+=1
             for entry in mode[1]: # for every time
-                Label(board,text=entry[0],relief=RIDGE,width=64).grid()
+                Label(board,text=entry[0],relief="ridge",width=64).grid(row=line,column=0) # TODO: recalculate widths
                 written_time=str(round(entry[1]%60,4))+"s" # this bit figures out if it goes into minutes or hours
                 if entry[1]>=60:
                     written_time=str(int(entry[1]%3600//60))+"m "+written_time
                     if entry[1]>=3600:
                         written_time=str(int(entry[1]//3600))+"h "+written_time
-                Label(board,text=written_time,relief=RIDGE,width=15).grid(row=lines,column=1)
-                lines+=1
+                Label(board,text=written_time,relief="ridge",width=15).grid(row=line,column=1)
+                line+=1
             if leaderboards.index(mode)!=len(leaderboards)-1:
                 Label(board).grid() # spacer label for gaps between each board
-            lines+=2
+                line+=1
         
         boardframe.create_window((0,0),window=board,anchor="nw") # this is all more scrollbar stuff
         board.update_idletasks() # keeps the scrollbar updating
-        boardframe.config(width=561,height=min(lines*21-42,538))
+        boardframe.config(width=board.winfo_width(),height=min(line*21,538))
         boardframe.config(scrollregion=boardframe.bbox("all"))
         
         Label(window.frame).grid() # spacer
@@ -374,21 +320,22 @@ def present_no_gui():
             print(f"        {entry[0]}: {written_time}")
         print()
 
-def access(): # reads the file & puts it into the nested list (table with sections)
+def access(): # reads the file & formats into [[rows,columns,mines],[(str:name,float:score),...],...]
+    leaderboards=[]
     try:
-        file=open("leaderboard.txt")
+        file=open("leaderboards.txt")
         leaderboards=file.readlines()
         file.close()
-        for line in leaderboards:
-            # line=line[0:-1] # turns each line into a string (character array) # there's no way this is necessary, keeping just incase
-            line=line.split(":") # splits the rank from the corresponding scores
-            line[0]=[int(num) for num in line[0].split(",")] # TODO: test these list comps & reformat as r,c,m|n:s,n:s,n:s...
-            line[1]=[(entry[0],float(entry[1])) for entry in [entry.split(",") for entry in line[1].split(";")]]
-    except:
-        return [] # if there is no file or an empty/corrupt file
+        for line in range(len(leaderboards)):
+            # leaderboards[line]=leaderboards[line][0:-1] # turns each line into a string (character array) # there's no way this is necessary, keeping just incase
+            leaderboards[line]=leaderboards[line].split("|") # splits the category from the corresponding scores
+            leaderboards[line][0]=[int(param) for param in leaderboards[line][0].split(",")] # formats into [rows,columns,mines]
+            leaderboards[line][1]=[(entry[0],float(entry[1])) for entry in [entry.split(":") for entry in leaderboards[line][1].split(",")]] # formats into list of (str:name,float:score)
+    finally:
+        return leaderboards # if file not found or corrupt
 
 def empty_leaderboards(): # clears the leaderboards
-    file=open("leaderboard.txt","w")
+    file=open("leaderboards.txt","w")
     file.truncate()
     file.close()
     present()
@@ -397,6 +344,7 @@ def empty_leaderboards(): # clears the leaderboards
 #                                                       Run                                                        #
 # ---------------------------------------------------------------------------------------------------------------- #
 
+state={"name":"","rows":10,"columns":10,"mines":10}
 menu() # runs the menu
 window.mainloop() # gets the gui going
 
